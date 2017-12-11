@@ -76,6 +76,7 @@ doa17CodeBuild.with{
         condition("UNSTABLE_OR_BETTER")
         parameters{
           currentBuild()
+          propertiesFile('properties_file.txt')
         }
       }
     }
@@ -93,6 +94,7 @@ doa17CodeDeployDevelopment.with{
     stringParam("AWS_REGION",'',"Default AWS Region")
     stringParam("ENVIRONMENT_NAME",'',"Name of your Environment")
     stringParam("S3_BUCKET",'',"Web App Instance Profile from DevOps-Workshop-Networking stack")
+    stringParam("BUILD_ETAG",'',"Application Build eTAG")
   }
   wrappers {
     preBuildCleanup()
@@ -137,6 +139,7 @@ doa17CodeDeployProduction.with{
     stringParam("AWS_REGION",'',"Default AWS Region")
     stringParam("ENVIRONMENT_NAME",'',"Name of your Environment")
     stringParam("S3_BUCKET",'',"Web App Instance Profile from DevOps-Workshop-Networking stack")
+    stringParam("BUILD_ETAG",'',"Application Build eTAG")
   }
   wrappers {
     preBuildCleanup()
