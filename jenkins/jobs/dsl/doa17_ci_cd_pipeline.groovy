@@ -100,7 +100,7 @@ doa17CodeDeployDevelopment.with{
   }
   label("docker")
     steps {
-    shell'''
+    shell('''
   set +x
 
   export AWS_DEFAULT_REGION=$AWS_REGION
@@ -112,7 +112,6 @@ doa17CodeDeployDevelopment.with{
   sleep 30s
 
   set -x'''.stripMargin()
-
     )
   }
   publishers{
