@@ -9,55 +9,18 @@ def applicationRepository = "ssh://jenkins@gerrit:29418/${PROJECT_NAME}/doa17-ap
 def doa17CICDPipeline = buildPipelineView(projectFolderName + "/DOA17_CI_CD_Pipeline")
 
 // Jobs DOA17_CI_CD_Pipeline
-def doa17ApplicationRepository = freeStyleJob(projectFolderName + "/DOA17_Application_Repository")
 def doa17CodeBuild = freeStyleJob(projectFolderName + "/DOA17_Code_Build")
-def doa17CodeRevision = freeStyleJob(projectFolderName + "/DOA17_Code_Revision")
 def doa17CodeDeployDevelopment = freeStyleJob(projectFolderName + "/DOA17_Code_Deploy_Development")
-def doa17ApplicationTest = freeStyleJob(projectFolderName + "/DOA17_Application_Test")
 def doa17CodeDeployProduction = freeStyleJob(projectFolderName + "/DOA17_Code_Deploy_Production")
 
 // DOA17_CI_CD_Pipeline
 doa17CICDPipeline.with{
     title('DOA17 CI CD Pipeline')
     displayedBuilds(5)
-    selectedJob(projectFolderName + "/DOA17_Application_Repository")
+    selectedJob(projectFolderName + "/DOA17_Code_Build")
     showPipelineDefinitionHeader()
     alwaysAllowManualTrigger()
     refreshFrequency(5)
-}
-
-// Job DOA17_Application_Repository
-doa17ApplicationRepository.with{
-  description("Job Description")
-  environmentVariables {
-    env('WORKSPACE_NAME', workspaceFolderName)
-    env('PROJECT_NAME', projectFolderName)
-  }
-  parameters{
-    stringParam("KEY",'Description',"Value")
-  }
-  wrappers {
-    preBuildCleanup()
-    maskPasswords()
-  }
-  label("docker")
-    steps {
-    shell('''
-set +x
-
-set -x'''.stripMargin()
-    )
-  }
-  publishers{
-    downstreamParameterized{
-      trigger(projectFolderName + "/DOA17_Code_Build"){
-        condition("UNSTABLE_OR_BETTER")
-        parameters{
-          currentBuild()
-        }
-      }
-    }
-  }
 }
 
 // Job DOA17_Code_Build
@@ -68,52 +31,43 @@ doa17CodeBuild.with{
     env('PROJECT_NAME', projectFolderName)
   }
   parameters{
-    stringParam("KEY",'Description',"Value")
+    stringParam("AWS_REGION",'us-east-1',"Default AWS Region")
+    stringParam("ENVIRONMENT_NAME",'',"Name of your Environment")
+    stringParam("S3_BUCKET",'',"Web App Instance Profile from DevOps-Workshop-Networking stack")
   }
   wrappers {
     preBuildCleanup()
     maskPasswords()
   }
   label("docker")
-    steps {
-    shell('''
-set +x
-
-set -x'''.stripMargin()
-    )
-  }
-  publishers{
-    downstreamParameterized{
-      trigger(projectFolderName + "/DOA17_Code_Revision"){
-        condition("UNSTABLE_OR_BETTER")
-        parameters{
-          currentBuild()
+    scm{
+      git{
+        remote{
+          url(applicationRepository)
+          credentials("adop-jenkins-master")
         }
+        branch("*/master")
       }
     }
-  }
-}
-
-// Job DOA17_Code_Revision
-doa17CodeRevision.with{
-  description("Job Description")
-  environmentVariables {
-    env('WORKSPACE_NAME', workspaceFolderName)
-    env('PROJECT_NAME', projectFolderName)
-  }
-  parameters{
-    stringParam("KEY",'Description',"Value")
-  }
-  wrappers {
-    preBuildCleanup()
-    maskPasswords()
-  }
-  label("docker")
     steps {
     shell('''
-set +x
+  set +x
 
-set -x'''.stripMargin()
+  export AWS_DEFAULT_REGION=$AWS_REGION
+  echo "[INFO] Default region is set to $AWS_DEFAULT_REGION"
+
+  echo "[INFO] Building Application Code"
+  aws codebuild start-build --project-name ${ENVIRONMENT_NAME}-project
+  sleep 35s
+
+  echo "[INFO] Getting Code Build eTAG"
+  BUILD_ETAG=$(aws s3api head-object --bucket doa17-chuymarin --key WebAppOutputArtifact.zip --query \'ETag\' --output text)
+  echo "BUILD_ETAG=$BUILD_ETAG" >> properties_file.txt
+
+  echo "[INFO] Registering Revision for eTAG ${BUILD_ETAG}"
+  aws deploy register-application-revision --application-name ${ENVIRONMENT_NAME}-WebApp --description "Revison ${BUILD_NUMBER}" --s3-location bucket=${S3_BUCKET},key=WebAppOutputArtifact.zip,bundleType=zip,eTag=${BUILD_ETAG}
+
+  set -x'''.stripMargin()
     )
   }
   publishers{
@@ -136,7 +90,9 @@ doa17CodeDeployDevelopment.with{
     env('PROJECT_NAME', projectFolderName)
   }
   parameters{
-    stringParam("KEY",'Description',"Value")
+    stringParam("AWS_REGION",'',"Default AWS Region")
+    stringParam("ENVIRONMENT_NAME",'',"Name of your Environment")
+    stringParam("S3_BUCKET",'',"Web App Instance Profile from DevOps-Workshop-Networking stack")
   }
   wrappers {
     preBuildCleanup()
@@ -144,44 +100,19 @@ doa17CodeDeployDevelopment.with{
   }
   label("docker")
     steps {
-    shell('''
-set +x
+    shell'''
+  set +x
 
-set -x'''.stripMargin()
-    )
-  }
-  publishers{
-    downstreamParameterized{
-      trigger(projectFolderName + "/DOA17_Application_Test"){
-        condition("UNSTABLE_OR_BETTER")
-        parameters{
-          currentBuild()
-        }
-      }
-    }
-  }
-}
+  export AWS_DEFAULT_REGION=$AWS_REGION
+  echo "[INFO] Default region is set to $AWS_DEFAULT_REGION"
 
-// Job DOA17_Application_Test
-doa17ApplicationTest.with{
-  description("Job Description")
-  environmentVariables {
-    env('WORKSPACE_NAME', workspaceFolderName)
-    env('PROJECT_NAME', projectFolderName)
-  }
-  parameters{
-    stringParam("KEY",'Description',"Value")
-  }
-  wrappers {
-    preBuildCleanup()
-    maskPasswords()
-  }
-  label("docker")
-    steps {
-    shell('''
-set +x
+  echo "[INFO] Deploying Application to ${ENVIRONMENT_NAME}-DevWebApp"
+  aws deploy create-deployment --application-name ${ENVIRONMENT_NAME}-WebApp --deployment-group-name ${ENVIRONMENT_NAME}-DevWebApp --description "Applicacion Build ${BUILD_NUMBER}" --s3-location bucket=${S3_BUCKET},key=WebAppOutputArtifact.zip,bundleType=zip,eTag=${BUILD_ETAG}
 
-set -x'''.stripMargin()
+  sleep 30s
+
+  set -x'''.stripMargin()
+
     )
   }
   publishers{
@@ -204,7 +135,9 @@ doa17CodeDeployProduction.with{
     env('PROJECT_NAME', projectFolderName)
   }
   parameters{
-    stringParam("KEY",'Description',"Value")
+    stringParam("AWS_REGION",'',"Default AWS Region")
+    stringParam("ENVIRONMENT_NAME",'',"Name of your Environment")
+    stringParam("S3_BUCKET",'',"Web App Instance Profile from DevOps-Workshop-Networking stack")
   }
   wrappers {
     preBuildCleanup()
@@ -213,9 +146,17 @@ doa17CodeDeployProduction.with{
   label("docker")
     steps {
     shell('''
-set +x
+  set +x
 
-set -x'''.stripMargin()
+  export AWS_DEFAULT_REGION=$AWS_REGION
+  echo "[INFO] Default region is set to $AWS_DEFAULT_REGION"
+
+  echo "[INFO] Deploying Application to ${ENVIRONMENT_NAME}-ProdWebApp"
+  aws deploy create-deployment --application-name ${ENVIRONMENT_NAME}-WebApp --deployment-group-name ${ENVIRONMENT_NAME}-ProdWebApp --description "Applicacion Build ${BUILD_NUMBER}" --s3-location bucket=${S3_BUCKET},key=WebAppOutputArtifact.zip,bundleType=zip,eTag=${BUILD_ETAG}
+
+  sleep 30s
+
+  set -x'''.stripMargin()
     )
   }
 }
